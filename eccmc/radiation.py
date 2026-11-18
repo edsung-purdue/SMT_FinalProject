@@ -484,9 +484,14 @@ def tid_seu_failure_rate(m, n_tid, n_words, W, kappa=1.0):
 
 
 def secded_rate_with_tid(m, n_tid, n_words, W, n_scrubs=0, kappa=1.0):
-    """lambda for SEC-DED with s scrubs and n_tid persistent errors: the SEU-SEU
-    term is cut by scrubbing, the SEU-TID term is not."""
+    """lambda for SEC-DED with s scrubs and n_tid persistent errors.
+
+    Three terms: SEU-SEU pairs (cut by scrubbing, paper 1 Fig. 10), SEU-TID
+    pairs and TID-TID pairs.  The last two are not removed by scrubbing.
+    """
     from . import analytic as A
     parts = n_scrubs + 1
-    seu = parts * A.nfm_plus(2, np.asarray(m, float) / parts, n_words / kappa, W)
-    return seu + tid_seu_failure_rate(m, n_tid, n_words, W, kappa)
+    LA_eff = n_words / kappa
+    seu = parts * A.nfm_plus(2, np.asarray(m, float) / parts, LA_eff, W)
+    tid_tid = A.nfm_plus(2, n_tid, LA_eff, W) if n_tid > 0 else 0.0
+    return seu + tid_seu_failure_rate(m, n_tid, n_words, W, kappa) + tid_tid

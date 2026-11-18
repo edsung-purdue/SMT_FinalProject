@@ -12,6 +12,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 import time
@@ -245,7 +246,8 @@ def sheet_fig6():
 
 
 def _pfail_sheet(res, codes, la_of, tag_of, mlo, mhi):
-    m = np.unique(np.logspace(np.log10(mlo), np.log10(mhi), 121).round())
+    mc_m = [r["m"] for r in res if any(r["tag"] == tag_of(c) for c in codes)]
+    m = np.unique(np.concatenate([np.logspace(np.log10(mlo), np.log10(mhi), 121).round(), mc_m]))
     df = pd.DataFrame({"m": m})
     for c in codes:
         df[f"{c.name} analytic"] = A.p_failure(c, m, la_of(c))
@@ -281,7 +283,7 @@ def sheet_table2(res):
         for nines, paper in zip(NINES, TABLE2_PAPER[c.name]):
             ours = A.max_bitflips_for_reliability(c, LA, nines)
             ours_exact = A.max_bitflips_for_reliability(c, LA, nines, method="exact")
-            rows.append({"code": c.name, "LA (words)": LA, "reliability": f"{nines*100:.6g}%",
+            rows.append({"code": c.name, "LA (words)": LA, "reliability": f"{nines*100:.8g}%",
                          "paper m": paper, "reproduced m (paper eqs)": ours,
                          "reproduced m (exact)": ours_exact,
                          "diff": ours - paper,
@@ -323,6 +325,8 @@ def main():
     ap.add_argument("--quick", action="store_true")
     ap.add_argument("--workers", type=int, default=os.cpu_count())
     ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "..", "results"))
+    ap.add_argument("--from-raw", action="store_true",
+                    help="rebuild the workbook from results/paper1_mc_raw.json without re-simulating")
     args = ap.parse_args()
     if args.quick:
         BUDGET, MAX_TRIALS = 2e6, 5000
@@ -335,9 +339,17 @@ def main():
         for nines in NINES[:2]:
             m = TABLE2_PAPER[c.name][NINES.index(nines)]
             tasks.append((f"t2_{c.name}", la_for(c, 256 * MB), c.n, m, (c,), (), 0, seed)); seed += 1
-    print(f"Running {len(tasks)} Monte Carlo points on {args.workers} workers "
-          f"(budget {BUDGET:.0e} hits/point)", flush=True)
-    res = run_tasks(tasks, args.workers)
+    raw = os.path.join(args.out, "paper1_mc_raw.json")
+    if args.from_raw:
+        with open(raw) as fh:
+            res = json.load(fh)
+    else:
+        print(f"Running {len(tasks)} Monte Carlo points on {args.workers} workers "
+              f"(budget {BUDGET:.0e} hits/point)", flush=True)
+        res = run_tasks(tasks, args.workers)
+        with open(raw, "w") as fh:
+            json.dump([{k: (float(v) if isinstance(v, (np.floating, np.integer)) else v)
+                        for k, v in r.items()} for r in res], fh)
     # attach targets to table2 MC rows
     for r in res:
         if r["tag"].startswith("t2_"):
